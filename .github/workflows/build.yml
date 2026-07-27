@@ -8,12 +8,11 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
       - name: Build
         run: dotnet build WeTypeCaps.csproj -c Release
       - name: Self-test
         run: dotnet .\bin\Release\net10.0-windows\WeTypeCaps.dll --self-test
-
