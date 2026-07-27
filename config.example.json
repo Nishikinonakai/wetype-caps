@@ -1,0 +1,11 @@
+{
+  "HoldThresholdMilliseconds": 450,
+  "StateRefreshMilliseconds": 120,
+  "BypassFullscreen": true,
+  "FullscreenProcessNames": [],
+  "AlwaysBypassProcessNames": [],
+  "WeTypeTipClsid": "{86598FB9-66A2-463E-B9C2-AEB906D477AD}",
+  "WeTypeProfileGuid": "{607FDF85-FCC8-4DBD-A365-41296F980C9C}",
+  "EnableDebugLog": false
+}
+
