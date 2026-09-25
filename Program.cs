@@ -12,7 +12,15 @@ internal static class Program
     {
         ApplicationConfiguration.Initialize();
 
-        string configPath = Path.Combine(AppContext.BaseDirectory, "config.json");
+        bool commandMode = args.Any(a =>
+            a.Equals("--self-test", StringComparison.OrdinalIgnoreCase) ||
+            a.Equals("--diagnose", StringComparison.OrdinalIgnoreCase) ||
+            a.Equals("--sendinput-test", StringComparison.OrdinalIgnoreCase));
+        if (!commandMode && AppInstall.OfferInstall()) return 0;
+
+        Directory.CreateDirectory(AppInstall.DirectoryPath);
+        string configPath = AppInstall.ConfigPath;
+        bool firstRun = !File.Exists(configPath);
         AppConfig config;
         try
         {
@@ -57,7 +65,7 @@ internal static class Program
 
         try
         {
-            Application.Run(new TrayApplicationContext(configPath, config));
+            Application.Run(new TrayApplicationContext(configPath, config, firstRun));
             return 0;
         }
         catch (Exception ex)
@@ -77,13 +85,14 @@ internal static class Program
         try
         {
             var identity = TsfProfileDetector.ResolveWeTypeIdentity(config);
-            using var tsf = new TsfProfileDetector(identity);
+            using var tsf = new TsfProfileDetector();
             ActiveProfile active = tsf.GetActiveProfile();
             ForegroundState foreground = FullscreenDetector.Inspect(config);
             var report = new
             {
                 Time = DateTimeOffset.Now,
                 Config = config,
+                InstalledProfiles = TsfProfileDetector.DiscoverInstalledImes(),
                 WeTypeIdentity = identity,
                 ActiveProfile = active,
                 Foreground = new
@@ -97,7 +106,8 @@ internal static class Program
                     foreground.IsAlwaysBypassed
                 },
                 WouldCaptureCapsLock =
-                    active.IsMatch(identity) &&
+                    config.ImeRules.Any(r => r.Matches(active)) &&
+                    !foreground.IsAlwaysBypassed &&
                     !(config.BypassFullscreen && foreground.IsFullscreenAndSelected)
             };
             string json = JsonSerializer.Serialize(report, AppConfig.JsonOptions);

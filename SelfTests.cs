@@ -52,10 +52,27 @@ internal static class SelfTests
             3);
         Check(active.IsMatch(identity), "TSF exact identity match", failures);
         Check(!active.IsMatch(identity with { ProfileGuid = Guid.NewGuid() }), "TSF mismatch", failures);
+        var rule = new ImeRule
+        {
+            Name = "test", Clsid = identity.Clsid.ToString(),
+            ProfileGuid = identity.ProfileGuid.ToString(), Shortcut = ImeShortcut.Shift
+        };
+        Check(rule.Matches(active), "configured IME rule matches", failures);
+        rule.Enabled = false;
+        Check(!rule.Matches(active), "disabled IME rule is ignored", failures);
+        try
+        {
+            using var settings = new SettingsForm(new AppConfig(), false, default);
+            Check(settings.GetConfig().ImeRules.Count > 0, "settings can load and save IME rules", failures);
+        }
+        catch (Exception ex)
+        {
+            failures.Add("settings form: " + ex.Message);
+        }
 
         if (failures.Count == 0)
         {
-            Console.WriteLine("Self-test passed (7 checks).");
+            Console.WriteLine("Self-test passed (10 checks).");
             return 0;
         }
 

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 namespace WeTypeCaps;
 
 public readonly record struct TsfProfileIdentity(Guid Clsid, Guid ProfileGuid, string Source);
+public readonly record struct InstalledIme(string Name, Guid Clsid, Guid ProfileGuid);
 
 public readonly record struct ActiveProfile(
     int HResult,
@@ -29,14 +30,10 @@ internal sealed class TsfProfileDetector : IDisposable
     private static readonly Guid KeyboardCategory =
         new("34745C63-B2F0-4784-8B67-5E12C8701A31");
 
-    private readonly TsfProfileIdentity _identity;
     private object? _comObject;
     private ITfInputProcessorProfileMgr? _manager;
 
-    internal TsfProfileDetector(TsfProfileIdentity identity)
-    {
-        _identity = identity;
-    }
+    internal TsfProfileDetector() { }
 
     internal ActiveProfile GetActiveProfile()
     {
@@ -53,12 +50,12 @@ internal sealed class TsfProfileDetector : IDisposable
             profile.dwFlags);
     }
 
-    internal bool IsWeTypeActive(out ActiveProfile profile)
+    internal bool TryGetActiveProfile(out ActiveProfile profile)
     {
         try
         {
             profile = GetActiveProfile();
-            return profile.IsMatch(_identity);
+            return profile.HResult == 0;
         }
         catch (Exception ex)
         {
@@ -81,6 +78,45 @@ internal sealed class TsfProfileDetector : IDisposable
             Guid.Parse(config.WeTypeTipClsid),
             Guid.Parse(config.WeTypeProfileGuid),
             "config");
+    }
+
+    internal static IReadOnlyList<InstalledIme> DiscoverInstalledImes()
+    {
+        var found = new Dictionary<(Guid, Guid), InstalledIme>();
+        foreach (RegistryHive hive in new[] { RegistryHive.LocalMachine, RegistryHive.CurrentUser })
+        foreach (RegistryView view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(hive, view);
+                using var tip = root.OpenSubKey(@"SOFTWARE\Microsoft\CTF\TIP");
+                if (tip is null) continue;
+                foreach (string clsidText in tip.GetSubKeyNames())
+                {
+                    if (!Guid.TryParse(clsidText, out var clsid)) continue;
+                    using var languages = tip.OpenSubKey($@"{clsidText}\LanguageProfile");
+                    if (languages is null) continue;
+                    foreach (string language in languages.GetSubKeyNames())
+                    {
+                        using var profiles = languages.OpenSubKey(language);
+                        if (profiles is null) continue;
+                        foreach (string profileText in profiles.GetSubKeyNames())
+                        {
+                            if (!Guid.TryParse(profileText, out var profileGuid)) continue;
+                            using var profile = profiles.OpenSubKey(profileText);
+                            string name = Convert.ToString(profile?.GetValue("Description")) ?? "";
+                            if (string.IsNullOrWhiteSpace(name))
+                                name = Convert.ToString(profile?.GetValue("Display Description")) ?? "";
+                            if (string.IsNullOrWhiteSpace(name))
+                                name = $"{clsidText} / {profileText}";
+                            found.TryAdd((clsid, profileGuid), new InstalledIme(name, clsid, profileGuid));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) { AppLog.Write($"TIP discovery skipped {hive}/{view}: {ex.Message}"); }
+        }
+        return found.Values.OrderBy(x => x.Name).ToArray();
     }
 
     private static TsfProfileIdentity? DiscoverFromRegistry()
@@ -231,4 +267,3 @@ internal sealed class TsfProfileDetector : IDisposable
         int GetActiveProfile(ref Guid category, out TF_INPUTPROCESSORPROFILE profile);
     }
 }
-

@@ -8,16 +8,18 @@ internal sealed class KeyboardRemapper : IDisposable
     private static readonly nuint InjectionMarker =
         nint.Size == 8 ? unchecked((nuint)0x5754595045434150UL) : (nuint)0x57435450U;
 
-    private readonly Func<bool> _shouldCapture;
+    private readonly Func<ImeShortcut?> _shortcutForActiveIme;
     private readonly NativeMethods.LowLevelKeyboardProc _hookProc;
     private readonly System.Windows.Forms.Timer _holdTimer;
     private nint _hook;
     private bool _capturedPhysicalDown;
     private bool _longPressTriggered;
+    private ImeShortcut _capturedShortcut;
+    private nint _capturedWindow;
 
-    internal KeyboardRemapper(Func<bool> shouldCapture, int holdThresholdMilliseconds)
+    internal KeyboardRemapper(Func<ImeShortcut?> shortcutForActiveIme, int holdThresholdMilliseconds)
     {
-        _shouldCapture = shouldCapture;
+        _shortcutForActiveIme = shortcutForActiveIme;
         _hookProc = HookCallback;
         _holdTimer = new System.Windows.Forms.Timer
         {
@@ -76,11 +78,14 @@ internal sealed class KeyboardRemapper : IDisposable
                 return 1;
             }
 
-            if (!_shouldCapture())
+            ImeShortcut? shortcut = _shortcutForActiveIme();
+            if (shortcut is null || ModifierIsDown())
             {
                 return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
             }
 
+            _capturedShortcut = shortcut.Value;
+            _capturedWindow = NativeMethods.GetForegroundWindow();
             _capturedPhysicalDown = true;
             _longPressTriggered = false;
             _holdTimer.Stop();
@@ -91,13 +96,15 @@ internal sealed class KeyboardRemapper : IDisposable
         if (isUp && _capturedPhysicalDown)
         {
             _holdTimer.Stop();
-            bool sendShortPress = !_longPressTriggered;
+            bool sendShortPress = !_longPressTriggered && !ModifierIsDown() &&
+                NativeMethods.GetForegroundWindow() == _capturedWindow;
             _capturedPhysicalDown = false;
             _longPressTriggered = false;
 
             if (sendShortPress)
             {
-                SendCtrlSpace();
+                if (_capturedShortcut == ImeShortcut.CtrlSpace) SendCtrlSpace();
+                else SendKeyStroke(NativeMethods.VkLShift);
             }
 
             return 1;
@@ -105,6 +112,13 @@ internal sealed class KeyboardRemapper : IDisposable
 
         return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
     }
+
+    private static bool ModifierIsDown() =>
+        (NativeMethods.GetAsyncKeyState(NativeMethods.VkShift) & 0x8000) != 0 ||
+        (NativeMethods.GetAsyncKeyState(NativeMethods.VkControl) & 0x8000) != 0 ||
+        (NativeMethods.GetAsyncKeyState(NativeMethods.VkMenu) & 0x8000) != 0 ||
+        (NativeMethods.GetAsyncKeyState(NativeMethods.VkLWin) & 0x8000) != 0 ||
+        (NativeMethods.GetAsyncKeyState(NativeMethods.VkRWin) & 0x8000) != 0;
 
     private void HoldTimerOnTick(object? sender, EventArgs e)
     {

@@ -1,99 +1,31 @@
-# WeType Caps
+# Caps 输入法切换
 
-仅在“微信输入法 / WeType”是当前活动 TSF 输入法时改变 Caps Lock：
+Windows 10/11 托盘小程序：在选定输入法下，短按 Caps Lock 发送该输入法的中英文切换快捷键；长按（默认 450 毫秒）切换大写锁定。未选定的输入法、全屏窗口和指定进程保持 Caps Lock 原行为。
 
-- 短按 Caps Lock：发送 `Ctrl+Space`，切换中英文。
-- 长按 Caps Lock（默认 450 ms）：切换系统大写锁定。
-- 微信输入法未激活：不拦截，Caps Lock 保持系统原行为。
-- 前台应用全屏：默认不拦截，避免影响全屏游戏。
+## 安装与设置
 
-程序只处理 Caps Lock 事件，不记录普通按键内容，不注入微信输入法进程，也不修改微信输入法文件。
+1. 双击 `dist/WeTypeCaps.exe`，在安装提示中点“是”。程序会复制到 `%LOCALAPPDATA%\WeTypeCaps`，设置当前用户登录后启动并立即运行。不需要管理员权限或单独安装 .NET。
+2. 在系统托盘右键程序图标，点“设置…”。勾选要启用的输入法，并为每个输入法选择 `Ctrl+Space` 或 `Shift`。保存后立即生效。
+3. 可在设置中调整长按阈值、全屏绕过、始终绕过的进程和开机启动。
 
-## 现有方案调研（截至 2026-07-27）
+配置保存在 `%LOCALAPPDATA%\WeTypeCaps\config.json`。从旧版程序目录读取到的 `config.json` 会在首次安装时复制过去。安装源文件可以在安装后删除。
 
-- [TapCaps](https://github.com/honue/TapCaps)：交互最接近，支持 Caps Lock 短按切换中英文、长按锁定大写，但 README 只说明在微软拼音上测试；没有按指定 TSF Profile 生效或全屏绕过。仓库当前也没有可识别的开源许可证，因此没有直接复制其代码。
-- [Caps IME Switcher](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/caps-ime-switcher.wh.cpp)：Windhawk 模组，支持短按切换下一输入语言、长按大写；需要 Windhawk，且不识别微信输入法 Profile，也没有全屏条件。
-- [capslock-layout.ahk](https://gist.github.com/reclaimed/4a18d88b445bb80759d85188db2f5db4)：AutoHotkey 脚本，短按发送 `Win+Space`、长按 Caps Lock；没有输入法类型和前台窗口条件。
-- [CCaps](https://github.com/holgertkey/ccaps)：MIT 许可的 Rust 工具，使用低级键盘钩子循环切换键盘布局；大写是 `Shift+Caps Lock`，按 HKL/LangID 识别，无法区分同属简体中文的微信输入法和微软拼音。
-- [Vonng/Capslock](https://github.com/Vonng/Capslock)：成熟的 Caps Lock/Hyper 键增强方案，但 Windows 版已归档，目标不是本需求的输入法绑定。
+如需自行构建，安装 .NET 10 SDK 后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1`。生成的 `dist/WeTypeCaps.exe` 是 Windows x64 自包含单文件程序。
 
-因此本项目从零实现了缺失的两层条件：TSF Profile 精确匹配，以及前台全屏绕过；没有复制上述项目源码。
+## 输入法支持的范围
 
-## 为什么是独立托盘程序
+设置界面读取 Windows TSF 注册信息，列出本机注册的 Profile，并提供搜索。这个列表可能包含尚未添加到语言栏的系统内置输入法和语音项目；勾选前请确认它是自己正在使用的键盘输入法。程序在运行时比较活动 Profile 的 CLSID 和 Profile GUID；因此可分别配置微信输入法、微软拼音及其他已注册的 TSF 输入法，而不把同属简体中文的输入法混为一谈。默认只启用微信输入法的已知 Profile。安装的输入法版本如果换了 GUID，请在设置中勾选新发现的条目。
 
-现有 AutoHotkey / PowerToys 类方案可以做短按、长按映射，但不能可靠区分同为 `0x0804` 的微软拼音、微信输入法等 TSF Profile。WeType Caps 使用 Windows 的 `ITfInputProcessorProfileMgr::GetActiveProfile`，同时比对微信输入法的 CLSID 和 Profile GUID。
+“支持”指能识别 Profile 并发送所选按键，不保证每种输入法都使用同一个切换快捷键。请先在输入法设置中确认快捷键：例如有的输入法用 `Ctrl+Space`，有的可设为单按 `Shift`。当前没有针对每家输入法的私有 API，也不读取输入法内部的中英文状态；如果某输入法只提供未列出的切换方式，此版本不能可靠切换。Windows 传统键盘布局或没有注册 TSF Profile 的输入法，也不会显示为可选条目。
 
-本机检测到的微信输入法 2.1.1.6 标识：
+## 设计取舍与边界
 
-- CLSID：`{86598FB9-66A2-463E-B9C2-AEB906D477AD}`
-- Profile：`{607FDF85-FCC8-4DBD-A365-41296F980C9C}`
-
-程序启动时会先从注册表按 `WeType` 描述自动发现标识；配置中的 GUID 是发现失败时的后备值。
-
-## 构建与运行
-
-需要 Windows 10/11 和 .NET 10 SDK。在 PowerShell 执行：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
-.\publish\WeTypeCaps.exe
-```
-
-安装为开机启动并立即运行：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-卸载只会移除开机启动并停止本目录中的程序，不删除文件：
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall.ps1
-```
-
-## 配置
-
-首次运行会在程序旁生成 `config.json`。托盘菜单可打开或重新加载配置。
-
-- `HoldThresholdMilliseconds`：长按阈值，范围 200–2000 ms。
-- `StateRefreshMilliseconds`：输入法/前台窗口刷新间隔，范围 50–2000 ms。
-- `BypassFullscreen`：是否绕过全屏窗口。
-- `FullscreenProcessNames`：空数组表示绕过所有全屏窗口；填入进程名后只绕过匹配的全屏进程，支持 `*` 和 `?`。
-- `AlwaysBypassProcessNames`：无论是否全屏都绕过的进程名，支持通配符。
-
-例如，只在指定游戏全屏时绕过：
-
-```json
-"FullscreenProcessNames": [
-  "game.exe",
-  "steam_app_*"
-]
-```
-
-默认选择“所有全屏窗口都绕过”，因为 Windows 没有可信的通用 API 能判断任意进程是否为游戏；这也会绕过全屏视频和幻灯片，是较保守的安全边界。独占全屏、反作弊和管理员权限游戏可能直接屏蔽普通桌面键盘钩子，此时程序同样不会改变游戏输入。
+- 使用低级键盘钩子拦截 Caps Lock，并用 `SendInput` 发快捷键；不注入输入法进程，不记录普通键盘输入。用户按住 Ctrl、Alt、Shift 或 Win 时不拦截 Caps Lock。
+- TSF 查询每 120 毫秒刷新一次，切换输入法和按下 Caps Lock 几乎同时发生时，可能遇到短暂状态延迟。按键期间前台窗口发生变化时，不会把短按动作发送到新窗口。
+- 默认绕过所有全屏窗口。这包括视频、演示文稿，也包括游戏；Windows 没有可靠的通用“这是游戏”判定。可在配置文件的 `FullscreenProcessNames` 中限定全屏绕过的进程。
+- 普通权限运行的程序无法可靠向管理员权限窗口发送模拟按键；安全桌面、部分游戏和反作弊环境也可能屏蔽钩子或注入。
+- Windows 用户级安装不会出现在系统“已安装的应用”列表。卸载时退出托盘程序，删除 `%LOCALAPPDATA%\WeTypeCaps` 目录，并删除 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 下的 `WeTypeCaps` 值；仓库的 `uninstall.ps1` 可执行这些步骤。
 
 ## 诊断
 
-```powershell
-dotnet .\publish\WeTypeCaps.dll --self-test
-dotnet .\publish\WeTypeCaps.dll --diagnose
-```
-
-底层 `SendInput` 注入测试会切换一次中英文状态；连续执行两次可测试并恢复原状态：
-
-```powershell
-dotnet .\publish\WeTypeCaps.dll --sendinput-test
-dotnet .\publish\WeTypeCaps.dll --sendinput-test
-```
-
-托盘菜单“写入诊断日志”会写入：
-
-```text
-%LOCALAPPDATA%\WeTypeCaps\WeTypeCaps.log
-```
-
-## 已知边界
-
-- `Ctrl+Space` 必须在微信输入法设置中仍然是中英文切换键。
-- 短按 Caps Lock 时不建议同时按住 Shift、Alt 或 Win，这些修饰键会和 `Ctrl+Space` 一起到达前台应用。
-- 低权限程序无法向管理员权限窗口可靠注入按键；若办公软件以管理员身份运行，需要让本程序以相同权限运行。
+`WeTypeCaps.exe --self-test` 运行基础自检。`WeTypeCaps.exe --diagnose` 会把活动输入法、前台窗口和匹配结果写入 `%LOCALAPPDATA%\WeTypeCaps\WeTypeCaps.log`。托盘菜单也可手动写入诊断日志。

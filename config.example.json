@@ -1,4 +1,13 @@
 {
+  "ImeRules": [
+    {
+      "Name": "微信输入法",
+      "Clsid": "{86598FB9-66A2-463E-B9C2-AEB906D477AD}",
+      "ProfileGuid": "{607FDF85-FCC8-4DBD-A365-41296F980C9C}",
+      "Shortcut": 0,
+      "Enabled": true
+    }
+  ],
   "HoldThresholdMilliseconds": 450,
   "StateRefreshMilliseconds": 120,
   "BypassFullscreen": true,
@@ -8,4 +17,3 @@
   "WeTypeProfileGuid": "{607FDF85-FCC8-4DBD-A365-41296F980C9C}",
   "EnableDebugLog": false
 }
-

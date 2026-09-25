@@ -1,10 +1,6 @@
-param(
-    [switch]$SelfContained
-)
-
 $ErrorActionPreference = 'Stop'
 $projectDirectory = $PSScriptRoot
-$publishDirectory = Join-Path $projectDirectory 'publish'
+$publishDirectory = Join-Path $projectDirectory 'dist'
 
 $arguments = @(
     'publish',
@@ -12,22 +8,16 @@ $arguments = @(
     '-c', 'Release',
     '-r', 'win-x64',
     '-o', $publishDirectory,
+    '--self-contained', 'true',
+    '-p:PublishSingleFile=true',
+    '-p:IncludeNativeLibrariesForSelfExtract=true',
     '-p:DebugType=None',
     '-p:DebugSymbols=false'
 )
-
-if ($SelfContained) {
-    $arguments += '--self-contained'
-    $arguments += 'true'
-} else {
-    $arguments += '--self-contained'
-    $arguments += 'false'
-}
 
 & dotnet @arguments
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
-Copy-Item (Join-Path $projectDirectory 'config.example.json') (Join-Path $publishDirectory 'config.example.json') -Force
-Write-Host "Published to: $publishDirectory"
+Write-Host "Double-click to install: $(Join-Path $publishDirectory 'WeTypeCaps.exe')"

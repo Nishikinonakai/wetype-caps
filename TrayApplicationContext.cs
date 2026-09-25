@@ -20,15 +20,16 @@ internal sealed class TrayApplicationContext : ApplicationContext
     private readonly System.Windows.Forms.Timer _stateTimer;
     private bool _manualEnabled = true;
     private bool _captureEnabled;
+    private ImeShortcut? _activeShortcut;
     private ActiveProfile _activeProfile;
     private ForegroundState _foreground;
 
-    internal TrayApplicationContext(string configPath, AppConfig config)
+    internal TrayApplicationContext(string configPath, AppConfig config, bool firstRun)
     {
         _configPath = configPath;
         _config = config;
         _identity = TsfProfileDetector.ResolveWeTypeIdentity(config);
-        _tsf = new TsfProfileDetector(_identity);
+        _tsf = new TsfProfileDetector();
 
         _statusItem = new ToolStripMenuItem("正在检测…") { Enabled = false };
         _pauseItem = new ToolStripMenuItem("暂停");
@@ -40,8 +41,8 @@ internal sealed class TrayApplicationContext : ApplicationContext
         };
         _startupItem.Click += (_, _) => ToggleStartup();
 
-        var openConfig = new ToolStripMenuItem("打开配置");
-        openConfig.Click += (_, _) => OpenFile(_configPath);
+        var openConfig = new ToolStripMenuItem("设置…");
+        openConfig.Click += (_, _) => ShowSettings();
         var reloadConfig = new ToolStripMenuItem("重新加载配置");
         reloadConfig.Click += (_, _) => ReloadConfig();
         var writeDiagnostics = new ToolStripMenuItem("写入诊断日志");
@@ -74,7 +75,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _tray.DoubleClick += (_, _) => ShowStatus();
 
         _remapper = new KeyboardRemapper(
-            () => _captureEnabled,
+            () => _captureEnabled ? _activeShortcut : null,
             config.HoldThresholdMilliseconds);
         _remapper.Install();
 
@@ -90,27 +91,48 @@ internal sealed class TrayApplicationContext : ApplicationContext
         {
             AppLog.Write($"Started. Identity={_identity}");
         }
+        if (firstRun) ShowSettings();
     }
 
     private void RefreshState()
     {
-        bool isWeType = _tsf.IsWeTypeActive(out _activeProfile);
+        _tsf.TryGetActiveProfile(out _activeProfile);
+        _activeShortcut = _config.ImeRules.FirstOrDefault(r => r.Matches(_activeProfile))?.Shortcut;
         _foreground = FullscreenDetector.Inspect(_config);
         bool bypass =
             _foreground.IsAlwaysBypassed ||
             (_config.BypassFullscreen && _foreground.IsFullscreenAndSelected);
-        _captureEnabled = _manualEnabled && isWeType && !bypass;
+        _captureEnabled = _manualEnabled && _activeShortcut is not null && !bypass;
 
         string status = !_manualEnabled
             ? "已暂停"
-            : !isWeType
-                ? "等待微信输入法"
+            : _activeShortcut is null
+                ? "等待已启用的输入法"
                 : bypass
                     ? "当前应用已绕过"
                     : "生效中";
         _statusItem.Text = status;
         _pauseItem.Text = _manualEnabled ? "暂停" : "恢复";
         _tray.Text = $"WeType Caps：{status}";
+    }
+
+    private void ShowSettings()
+    {
+        using var settings = new SettingsForm(_config, IsStartupEnabled(), _activeProfile);
+        if (settings.ShowDialog() != DialogResult.OK) return;
+        try
+        {
+            AppConfig next = settings.GetConfig();
+            string temp = _configPath + ".tmp";
+            File.WriteAllText(temp, System.Text.Json.JsonSerializer.Serialize(next, AppConfig.JsonOptions));
+            File.Move(temp, _configPath, overwrite: true);
+            _config = next;
+            SetStartup(settings.Startup);
+            _remapper.HoldThresholdMilliseconds = next.HoldThresholdMilliseconds;
+            _stateTimer.Interval = next.StateRefreshMilliseconds;
+            RefreshState();
+        }
+        catch (Exception ex) { MessageBox.Show($"保存设置失败：{ex.Message}", "Caps 输入法切换"); }
     }
 
     private void TogglePause()
@@ -123,22 +145,20 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         try
         {
-            using RegistryKey key = Registry.CurrentUser.CreateSubKey(StartupKeyPath);
-            if (IsStartupEnabled())
-            {
-                key.DeleteValue(StartupValueName, throwOnMissingValue: false);
-            }
-            else
-            {
-                key.SetValue(StartupValueName, $"\"{Application.ExecutablePath}\"");
-            }
-
-            _startupItem.Checked = IsStartupEnabled();
+            SetStartup(!IsStartupEnabled());
         }
         catch (Exception ex)
         {
             MessageBox.Show($"修改开机启动失败：{ex.Message}", "WeType Caps");
         }
+    }
+
+    private void SetStartup(bool enabled)
+    {
+        using RegistryKey key = Registry.CurrentUser.CreateSubKey(StartupKeyPath);
+        if (enabled) key.SetValue(StartupValueName, $"\"{Application.ExecutablePath}\"");
+        else key.DeleteValue(StartupValueName, throwOnMissingValue: false);
+        _startupItem.Checked = enabled;
     }
 
     private static bool IsStartupEnabled()
@@ -152,14 +172,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
         try
         {
             AppConfig loaded = AppConfig.LoadOrCreate(_configPath);
-            TsfProfileIdentity identity = TsfProfileDetector.ResolveWeTypeIdentity(loaded);
-            if (identity != _identity)
-            {
-                MessageBox.Show(
-                    "检测到微信输入法标识已变化。请退出后重新启动程序以应用。",
-                    "WeType Caps");
-            }
-
             _config = loaded;
             _remapper.HoldThresholdMilliseconds = loaded.HoldThresholdMilliseconds;
             _stateTimer.Interval = loaded.StateRefreshMilliseconds;
@@ -192,7 +204,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
             $"前台进程：{_foreground.ProcessName}\n" +
             $"全屏：{fullscreen}\n" +
             $"长按阈值：{_config.HoldThresholdMilliseconds} ms\n\n" +
-            "短按 Caps Lock → Ctrl+Space\n" +
+            $"短按 Caps Lock → {_activeShortcut?.ToString() ?? "输入法未匹配"}\n" +
             "长按 Caps Lock → 切换大写锁定",
             "WeType Caps");
     }
@@ -221,4 +233,3 @@ internal sealed class TrayApplicationContext : ApplicationContext
         base.ExitThreadCore();
     }
 }
-

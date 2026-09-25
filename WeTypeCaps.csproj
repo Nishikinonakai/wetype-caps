@@ -8,6 +8,6 @@
     <AssemblyName>WeTypeCaps</AssemblyName>
     <RootNamespace>WeTypeCaps</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 </Project>

@@ -12,6 +12,12 @@ internal static class NativeMethods
     internal const int WmSysKeyDown = 0x0104;
     internal const int WmSysKeyUp = 0x0105;
     internal const int VkCapital = 0x14;
+    internal const int VkShift = 0x10;
+    internal const int VkControl = 0x11;
+    internal const int VkMenu = 0x12;
+    internal const int VkLShift = 0xA0;
+    internal const int VkLWin = 0x5B;
+    internal const int VkRWin = 0x5C;
     internal const int VkLControl = 0xA2;
     internal const int VkRControl = 0xA3;
     internal const int VkSpace = 0x20;

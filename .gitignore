@@ -1,6 +1,6 @@
 bin/
 obj/
 publish/
+dist/
 config.json
 *.log
-
